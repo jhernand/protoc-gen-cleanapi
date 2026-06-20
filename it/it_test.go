@@ -235,4 +235,8 @@ var _ = DescribeTable(
 		"Import of private file",
 		"import_of_private_file",
 	),
+	Entry(
+		"Oneof with private field",
+		"oneof_with_private_field",
+	),
 )
