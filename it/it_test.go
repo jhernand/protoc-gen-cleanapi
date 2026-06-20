@@ -231,4 +231,8 @@ var _ = DescribeTable(
 		"Private file",
 		"private_file",
 	),
+	Entry(
+		"Import of private file",
+		"import_of_private_file",
+	),
 )

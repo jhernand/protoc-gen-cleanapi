@@ -38,9 +38,10 @@ type Builder struct {
 
 // Object is the actual public API generator.
 type Object struct {
-	logger         *slog.Logger
-	protoRoot      string
-	packageRenames map[string]string
+	logger           *slog.Logger
+	protoRoot        string
+	packageRenames   map[string]string
+	privateFileNames map[string]bool
 }
 
 // New creates a new generator builder.
@@ -92,8 +93,12 @@ func (o *Object) Generate(request *pluginpb.CodeGeneratorRequest) (response *plu
 	// Initialize the discovered package mappings map.
 	o.packageRenames = make(map[string]string)
 
-	// First pass: discover all package mappings from annotations across all files.
+	// First pass: discover all package mappings and collect private file names.
+	o.privateFileNames = make(map[string]bool)
 	for _, file := range request.ProtoFile {
+		if o.isFilePrivate(file) {
+			o.privateFileNames[file.GetName()] = true
+		}
 		packageOverride := o.getPackageName(file)
 		if packageOverride != "" {
 			o.packageRenames[file.GetPackage()] = packageOverride
@@ -237,6 +242,9 @@ func (o *Object) processContent(desc *descriptorpb.FileDescriptorProto, file str
 
 	// Remove import of 'cleanapi.proto' since all private options are removed.
 	content = o.removePrivateOptionsImport(content)
+
+	// Remove imports that reference private files.
+	content = o.removePrivateFileImports(content, desc)
 
 	// Remove HTTP transcoding options if requested:
 	if o.shouldRemoveHttpOptions(desc) {
@@ -695,6 +703,41 @@ func (o *Object) removePrivateOptionsImport(content string) string {
 		result = append(result, line)
 	}
 
+	return strings.Join(result, "\n")
+}
+
+// removePrivateFileImports removes import statements that reference files marked as private. It uses the file
+// descriptor's dependency list to match import lines against the collected set of private file names.
+func (o *Object) removePrivateFileImports(content string, desc *descriptorpb.FileDescriptorProto) string {
+	privateDeps := make(map[string]bool)
+	for _, dep := range desc.Dependency {
+		if o.privateFileNames[dep] {
+			privateDeps[dep] = true
+			o.logger.Debug(
+				"Removing import of private file",
+				slog.String("file", desc.GetName()),
+				slog.String("import", dep),
+			)
+		}
+	}
+	if len(privateDeps) == 0 {
+		return content
+	}
+
+	lines := strings.Split(content, "\n")
+	var result []string
+	for _, line := range lines {
+		skip := false
+		for dep := range privateDeps {
+			if strings.Contains(line, fmt.Sprintf(`"%s"`, dep)) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			result = append(result, line)
+		}
+	}
 	return strings.Join(result, "\n")
 }
 
