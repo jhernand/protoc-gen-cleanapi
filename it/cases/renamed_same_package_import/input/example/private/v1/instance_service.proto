@@ -1,0 +1,83 @@
+/*
+Copyright (c) 2026 Red Hat, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+*/
+
+syntax = "proto3";
+
+package example.private.v1;
+
+import "cleanapi/cleanapi.proto";
+import "google/api/annotations.proto";
+import "example/private/v1/instance_type.proto";
+
+option (cleanapi.file).package = "example.public.v1";
+
+// ListRequest for listing instance types.
+message InstanceTypesListRequest {
+  optional int32 offset = 1;
+  optional int32 limit = 2;
+}
+
+// ListResponse containing instance types.
+message InstanceTypesListResponse {
+  int32 size = 1;
+  int32 total = 2;
+  repeated InstanceType items = 3;
+}
+
+// GetRequest for retrieving a specific instance type.
+message InstanceTypesGetRequest {
+  string id = 1;
+}
+
+// GetResponse containing the requested instance type.
+message InstanceTypesGetResponse {
+  InstanceType object = 1;
+}
+
+// CreateRequest for creating an instance type (private only).
+message InstanceTypesCreateRequest {
+  option (cleanapi.message).private = true;
+  InstanceType object = 1;
+}
+
+// CreateResponse after creating an instance type (private only).
+message InstanceTypesCreateResponse {
+  option (cleanapi.message).private = true;
+  InstanceType object = 1;
+}
+
+// Service for managing instance types.
+service InstanceTypes {
+  // List all instance types.
+  rpc List(InstanceTypesListRequest) returns (InstanceTypesListResponse) {
+    option (google.api.http) = {get: "/api/private/v1/instance_types"};
+  }
+
+  // Get a specific instance type.
+  rpc Get(InstanceTypesGetRequest) returns (InstanceTypesGetResponse) {
+    option (google.api.http) = {
+      get: "/api/private/v1/instance_types/{id}"
+      response_body: "object"
+    };
+  }
+
+  // Create a new instance type (private only).
+  rpc Create(InstanceTypesCreateRequest) returns (InstanceTypesCreateResponse) {
+    option (cleanapi.method).private = true;
+    option (google.api.http) = {
+      post: "/api/private/v1/instance_types"
+      body: "object"
+      response_body: "object"
+    };
+  }
+}

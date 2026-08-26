@@ -251,4 +251,12 @@ var _ = DescribeTable(
 		"Import used in options",
 		"import_used_in_options",
 	),
+	Entry(
+		"Renamed same package import",
+		"renamed_same_package_import",
+	),
+	Entry(
+		"Renamed import removal",
+		"renamed_import_removal",
+	),
 )

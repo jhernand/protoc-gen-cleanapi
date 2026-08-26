@@ -809,18 +809,64 @@ func (o *Object) removeUnusedImports(content string, desc *descriptorpb.FileDesc
 	return strings.Join(result, "\n")
 }
 
+// stripComments removes both single-line (//) and multi-line (/* */) comments from proto content.
+// This prevents type names mentioned in comments from being considered as actual usage.
+func stripComments(content string) string {
+	// Remove multi-line comments /* ... */
+	// (?s) flag makes . match newlines
+	multiLineCommentRe := regexp.MustCompile(`(?s)/\*.*?\*/`)
+	content = multiLineCommentRe.ReplaceAllString(content, "")
+
+	// Remove single-line comments // ...
+	// (?m) flag makes $ match end of line, not just end of string
+	singleLineCommentRe := regexp.MustCompile(`(?m)//.*$`)
+	content = singleLineCommentRe.ReplaceAllString(content, "")
+
+	return content
+}
+
 // isImportUsed checks if any types from the imported file are referenced in the content.
 func (o *Object) isImportUsed(content string, importPath string, currentFile *descriptorpb.FileDescriptorProto) bool {
-	// Find the imported file descriptor
-	importedFile, exists := o.allProtoFiles[importPath]
+	// The importPath might have been renamed (e.g., "types/v1" -> "public_types/v1").
+	// We need to look it up using the original path in allProtoFiles.
+	originalImportPath := o.reverseRenameImportPath(importPath)
+
+	// Find the imported file descriptor using the original path
+	importedFile, exists := o.allProtoFiles[originalImportPath]
 	if !exists {
-		// If we can't find the imported file, conservatively keep the import
+		// If we can't find the imported file descriptor (e.g., standard library protos),
+		// use a heuristic: check if likely type names from the import are referenced.
+		// For example, "google/protobuf/field_mask.proto" likely defines "FieldMask"
+		typeName := o.guessTypeNameFromImport(importPath)
+		if typeName != "" {
+			// Strip comments before checking for type usage to avoid false positives from comments
+			contentWithoutComments := stripComments(content)
+			pattern := fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(typeName))
+			matched, err := regexp.MatchString(pattern, contentWithoutComments)
+			if err != nil {
+				o.logger.Warn(
+					"Failed to check guessed type reference",
+					slog.String("type", typeName),
+					slog.Any("error", err),
+				)
+			} else if matched {
+				o.logger.Debug(
+					"Import is used (guessed type)",
+					slog.String("file", currentFile.GetName()),
+					slog.String("import", importPath),
+					slog.String("guessed_type", typeName),
+				)
+				return true
+			}
+		}
+
+		// If heuristic check didn't find usage, the import might be unused
 		o.logger.Debug(
-			"Could not find imported file descriptor, keeping import",
+			"Could not find imported file descriptor and no guessed type found in content",
 			slog.String("file", currentFile.GetName()),
 			slog.String("import", importPath),
 		)
-		return true
+		return false
 	}
 
 	// Check if the import's package is used in options/extensions (e.g., buf.validate, google.api)
@@ -862,13 +908,17 @@ func (o *Object) isImportUsed(content string, importPath string, currentFile *de
 		typeNames = append(typeNames, enum.GetName())
 	}
 
+	// Strip comments from content before checking for type usage to avoid false positives
+	// from type names mentioned in comments
+	contentWithoutComments := stripComments(content)
+
 	// Check if any of these types are referenced in the content
 	// We need to check for the type name as a word boundary to avoid false positives
 	for _, typeName := range typeNames {
 		// Create a regex pattern that matches the type name as a complete word
 		// This handles cases like "Conditions field_name" or "repeated Conditions"
 		pattern := fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(typeName))
-		matched, err := regexp.MatchString(pattern, content)
+		matched, err := regexp.MatchString(pattern, contentWithoutComments)
 		if err != nil {
 			o.logger.Warn(
 				"Failed to check type reference",
@@ -900,6 +950,62 @@ func (o *Object) collectNestedTypeNames(msg *descriptorpb.DescriptorProto) []str
 		names = append(names, o.collectNestedTypeNames(nested)...)
 	}
 	return names
+}
+
+// reverseRenameImportPath converts a potentially renamed import path back to its original form.
+// For example, "public_types/v1/types.proto" might have been renamed from "types/v1/types.proto".
+func (o *Object) reverseRenameImportPath(importPath string) string {
+	// Try to reverse the package rename by checking if any renamed package path appears in the import
+	for oldPkg, newPkg := range o.packageRenames {
+		oldPath := strings.Replace(oldPkg, ".", "/", -1)
+		newPath := strings.Replace(newPkg, ".", "/", -1)
+		// If the import starts with the new (renamed) package path, replace it with the old one
+		if strings.HasPrefix(importPath, newPath+"/") {
+			return strings.Replace(importPath, newPath+"/", oldPath+"/", 1)
+		}
+	}
+	// No rename found, return as-is
+	return importPath
+}
+
+// guessTypeNameFromImport attempts to guess the fully-qualified type name from a proto import path.
+// For example: "google/protobuf/field_mask.proto" -> "google.protobuf.FieldMask"
+// This is used as a fallback when the imported file descriptor is not available.
+// Returns empty string if no reasonable guess can be made.
+func (o *Object) guessTypeNameFromImport(importPath string) string {
+	// Extract the base filename without .proto extension
+	baseName := filepath.Base(importPath)
+	baseName = strings.TrimSuffix(baseName, ".proto")
+
+	// Get the directory path and convert to package-style (dots instead of slashes)
+	dirPath := filepath.Dir(importPath)
+	packagePath := strings.ReplaceAll(dirPath, "/", ".")
+
+	// Handle well-known google types and other standard patterns
+	// Convert snake_case filename to PascalCase type name
+	// e.g., "field_mask" -> "FieldMask", "timestamp" -> "Timestamp"
+	if strings.HasPrefix(importPath, "google/") || strings.Contains(baseName, "_") {
+		// Convert snake_case to PascalCase
+		parts := strings.Split(baseName, "_")
+		for i, part := range parts {
+			if len(part) > 0 {
+				parts[i] = strings.ToUpper(part[:1]) + part[1:]
+			}
+		}
+		typeName := strings.Join(parts, "")
+
+		// Return fully-qualified type name: package.TypeName
+		return packagePath + "." + typeName
+	}
+
+	// For other imports without underscores, assume the filename is already the type name
+	// Just capitalize first letter
+	if len(baseName) > 0 {
+		typeName := strings.ToUpper(baseName[:1]) + baseName[1:]
+		return packagePath + "." + typeName
+	}
+
+	return ""
 }
 
 // removeHttpOptions removes google.api.http option blocks from the content. These can be single-line or multi-line
