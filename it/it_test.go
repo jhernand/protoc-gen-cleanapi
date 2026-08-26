@@ -247,4 +247,8 @@ var _ = DescribeTable(
 		"Unused import removal",
 		"unused_import_removal",
 	),
+	Entry(
+		"Import used in options",
+		"import_used_in_options",
+	),
 )

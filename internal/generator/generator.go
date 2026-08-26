@@ -823,6 +823,30 @@ func (o *Object) isImportUsed(content string, importPath string, currentFile *de
 		return true
 	}
 
+	// Check if the import's package is used in options/extensions (e.g., buf.validate, google.api)
+	// This handles cases like (buf.validate.field), (google.api.field_behavior), etc.
+	importPackage := importedFile.GetPackage()
+	if importPackage != "" {
+		// Check for option syntax: (package.extension)
+		optionPattern := fmt.Sprintf(`\(%s\.`, regexp.QuoteMeta(importPackage))
+		matched, err := regexp.MatchString(optionPattern, content)
+		if err != nil {
+			o.logger.Warn(
+				"Failed to check option reference",
+				slog.String("package", importPackage),
+				slog.Any("error", err),
+			)
+		} else if matched {
+			o.logger.Debug(
+				"Import is used in options",
+				slog.String("file", currentFile.GetName()),
+				slog.String("import", importPath),
+				slog.String("package", importPackage),
+			)
+			return true
+		}
+	}
+
 	// Collect all type names defined in the imported file
 	var typeNames []string
 

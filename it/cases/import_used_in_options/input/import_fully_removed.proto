@@ -1,0 +1,32 @@
+/*
+Copyright (c) 2026 Red Hat, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+*/
+
+syntax = "proto3";
+
+package import_fully_removed.v1;
+
+import "cleanapi/cleanapi.proto";
+import "custom_options.proto";
+
+// A message where only the private fields use custom options. The import should be fully removed.
+message ImportFullyRemoved {
+  // Private field with custom option - should be removed
+  string private_field = 1 [
+    (cleanapi.field).private = true,
+    (custom.options.constraints).min_length = 1,
+    (custom.options.constraints).max_length = 100
+  ];
+
+  // Public field without custom option
+  string public_field = 2;
+}
