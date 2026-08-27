@@ -1,0 +1,93 @@
+/*
+Copyright (c) 2026 Red Hat, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+*/
+
+syntax = "proto3";
+
+package example.v1;
+
+import "cleanapi/cleanapi.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+
+message Resource {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+}
+
+message ListRequest {
+  optional int32 offset = 1;
+  optional int32 limit = 2;
+}
+
+message ListResponse {
+  int32 size = 1;
+  int32 total = 2;
+  repeated Resource items = 3;
+}
+
+message GetRequest {
+  string id = 1;
+}
+
+message GetResponse {
+  Resource object = 1;
+}
+
+message UpdateRequest {
+  option (cleanapi.message).private = true;
+  Resource object = 1;
+  google.protobuf.FieldMask update_mask = 2;
+  bool lock = 3;
+}
+
+message UpdateResponse {
+  option (cleanapi.message).private = true;
+  Resource object = 1;
+}
+
+message DeleteRequest {
+  option (cleanapi.message).private = true;
+  string id = 1;
+}
+
+message DeleteResponse {
+  option (cleanapi.message).private = true;
+}
+
+service ResourceService {
+  rpc List(ListRequest) returns (ListResponse) {
+    option (google.api.http) = {get: "/api/v1/resources"};
+  }
+
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/resources/{id}"
+      response_body: "object"
+    };
+  }
+
+  rpc Update(UpdateRequest) returns (UpdateResponse) {
+    option (cleanapi.method).private = true;
+    option (google.api.http) = {
+      patch: "/api/v1/resources/{object.id}"
+      body: "object"
+      response_body: "object"
+    };
+  }
+
+  rpc Delete(DeleteRequest) returns (DeleteResponse) {
+    option (cleanapi.method).private = true;
+    option (google.api.http) = {delete: "/api/v1/resources/{id}"};
+  }
+}

@@ -776,8 +776,8 @@ func (o *Object) removeUnusedImports(content string, desc *descriptorpb.FileDesc
 		if len(matches) > 1 {
 			importPath := matches[1]
 
-			// Skip if this is a standard proto import or cleanapi import (already handled elsewhere)
-			if strings.Contains(importPath, "google/") || strings.Contains(importPath, "cleanapi/") {
+			// Skip cleanapi imports (already handled by removePrivateOptionsImport)
+			if strings.Contains(importPath, "cleanapi/") {
 				result = append(result, line)
 				continue
 			}
