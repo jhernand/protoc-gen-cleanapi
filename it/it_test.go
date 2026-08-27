@@ -259,4 +259,8 @@ var _ = DescribeTable(
 		"Renamed import removal",
 		"renamed_import_removal",
 	),
+	Entry(
+		"Google import removal",
+		"google_import_removal",
+	),
 )
